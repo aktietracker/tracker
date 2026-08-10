@@ -66,6 +66,15 @@
   .period-summary b.down { color: var(--avanza); }
   .period-summary b.flat { color: var(--muted); }
   canvas { max-height: 420px; }
+
+  .series-toggles { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+  .series-toggles label {
+    display: flex; align-items: center; gap: 6px; font-size: 0.85rem;
+    color: var(--muted); cursor: pointer; user-select: none;
+  }
+  .series-toggles label.checked { color: var(--text); }
+  .series-toggles input { accent-color: var(--text); cursor: pointer; }
+  .series-toggles .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
   .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
   footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 24px; }
 </style>
@@ -90,6 +99,11 @@
       <button data-range="3y">3 år</button>
       <button data-range="all" class="active">Allt</button>
     </div>
+    <div class="series-toggles" id="seriesToggles">
+      <label class="checked"><input type="checkbox" data-series="total" checked><span class="dot" style="background:#2ecc71"></span>Totalt</label>
+      <label><input type="checkbox" data-series="avanza"><span class="dot" style="background:#ff3b30"></span>Avanza</label>
+      <label><input type="checkbox" data-series="nordnet"><span class="dot" style="background:#34c9eb"></span>Nordnet</label>
+    </div>
     <div id="chartHolder">
       <div class="period-summary" id="periodSummary"></div>
       <canvas id="ownerChart"></canvas>
@@ -113,6 +127,7 @@ let currentStock = STOCKS[0].key;
 let fullData = [];
 let currentRange = "all";
 let chart = null;
+let visibleSeries = { total: true, avanza: false, nordnet: false };
 
 function daysAgo(n) {
   const d = new Date();
@@ -250,40 +265,63 @@ function renderChart(range) {
   const labels = data.map(d => d.date);
   const avanzaData = data.map(d => d.avanza);
   const nordnetData = data.map(d => d.nordnet);
+  const totalData = data.map(d => d.avanza + d.nordnet);
+
+  const seriesConfig = {
+    total: { label: "Totalt", data: totalData, color: "#2ecc71", axis: "yTotal" },
+    avanza: { label: "Avanza", data: avanzaData, color: "#ff3b30", axis: "yAvanza" },
+    nordnet: { label: "Nordnet", data: nordnetData, color: "#34c9eb", axis: "yNordnet" },
+  };
+
+  const activeKeys = Object.keys(seriesConfig).filter(k => visibleSeries[k]);
+  const datasets = activeKeys.map(k => {
+    const s = seriesConfig[k];
+    return {
+      label: s.label, data: s.data, borderColor: s.color,
+      backgroundColor: s.color + "14", tension: 0.25, fill: true,
+      pointRadius: data.length > 60 ? 0 : 3, yAxisID: s.axis,
+    };
+  });
+
+  const scales = {
+    x: { ticks: { color: "#8b94a3", maxTicksLimit: 8 }, grid: { color: "#262b33" } },
+  };
+  activeKeys.forEach((k, i) => {
+    const s = seriesConfig[k];
+    scales[s.axis] = {
+      position: i === 0 ? "left" : "right",
+      ticks: { color: s.color },
+      grid: { display: i === 0, color: "#262b33" },
+      title: { display: true, text: s.label, color: s.color },
+    };
+  });
 
   if (chart) chart.destroy();
   const ctx = document.getElementById("ownerChart").getContext("2d");
   chart = new Chart(ctx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Avanza", data: avanzaData, borderColor: "#ff3b30", backgroundColor: "rgba(255,59,48,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 3, yAxisID: "yAvanza" },
-        { label: "Nordnet", data: nordnetData, borderColor: "#34c9eb", backgroundColor: "rgba(52,201,235,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 3, yAxisID: "yNordnet" },
-      ],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { labels: { color: "#e8eaed" } } },
-      scales: {
-        x: { ticks: { color: "#8b94a3", maxTicksLimit: 8 }, grid: { color: "#262b33" } },
-        yAvanza: {
-          position: "left",
-          ticks: { color: "#ff3b30" },
-          grid: { color: "#262b33" },
-          title: { display: true, text: "Avanza", color: "#ff3b30" },
-        },
-        yNordnet: {
-          position: "right",
-          ticks: { color: "#34c9eb" },
-          grid: { display: false },
-          title: { display: true, text: "Nordnet", color: "#34c9eb" },
-        },
-      },
+      plugins: { legend: { display: datasets.length > 1, labels: { color: "#e8eaed" } } },
+      scales,
     },
   });
 }
+
+document.querySelectorAll("#seriesToggles input").forEach(cb => {
+  cb.addEventListener("change", () => {
+    const wouldBeAllOff = !cb.checked && Object.values(visibleSeries).filter(v => v).length <= 1 && visibleSeries[cb.dataset.series];
+    if (wouldBeAllOff) {
+      cb.checked = true; // minst en serie måste alltid vara vald
+      return;
+    }
+    visibleSeries[cb.dataset.series] = cb.checked;
+    cb.closest("label").classList.toggle("checked", cb.checked);
+    renderChart(currentRange);
+  });
+});
 
 document.querySelectorAll("#rangeButtons button").forEach(btn => {
   btn.addEventListener("click", () => {
