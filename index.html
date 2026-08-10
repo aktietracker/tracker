@@ -135,11 +135,17 @@ function daysAgo(n) {
   return d;
 }
 
+function isWeekend(dateStr) {
+  const day = new Date(dateStr).getDay(); // 0 = söndag, 6 = lördag
+  return day === 0 || day === 6;
+}
+
 function filterByRange(data, range) {
-  if (range === "all") return data;
+  let filtered = data.filter(d => !isWeekend(d.date));
+  if (range === "all") return filtered;
   const cutoff = { "1w": 7, "1m": 30, "3m": 91, "6m": 182, "1y": 365, "3y": 1095 }[range];
   const cutoffDate = daysAgo(cutoff);
-  return data.filter(d => new Date(d.date) >= cutoffDate);
+  return filtered.filter(d => new Date(d.date) >= cutoffDate);
 }
 
 function renderStockTabs() {
