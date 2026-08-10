@@ -75,6 +75,20 @@
   .series-toggles label.checked { color: var(--text); }
   .series-toggles input { accent-color: var(--text); cursor: pointer; }
   .series-toggles .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  .fun-toggle {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; cursor: pointer;
+    margin-bottom: 14px; transition: all 0.15s ease;
+  }
+  .fun-toggle:hover { border-color: var(--muted); }
+  .fun-toggle.on { border-color: var(--accent); color: var(--text); background: #16211a; }
+
+  #skiMarker {
+    position: absolute; font-size: 26px; pointer-events: none;
+    transition: left 0.4s ease, top 0.4s ease, transform 0.4s ease;
+    display: none; transform-origin: center center;
+  }
   .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
   footer { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 24px; }
 </style>
@@ -104,7 +118,9 @@
       <label><input type="checkbox" data-series="avanza"><span class="dot" style="background:#ff3b30"></span>Avanza</label>
       <label><input type="checkbox" data-series="nordnet"><span class="dot" style="background:#34c9eb"></span>Nordnet</label>
     </div>
-    <div id="chartHolder">
+    <button class="fun-toggle" id="skiToggle">🎿 Skidläge</button>
+    <div id="chartHolder" style="position: relative;">
+      <div id="skiMarker">⛷️</div>
       <div class="period-summary" id="periodSummary"></div>
       <canvas id="ownerChart"></canvas>
     </div>
@@ -128,6 +144,7 @@ let fullData = [];
 let currentRange = "all";
 let chart = null;
 let visibleSeries = { total: true, avanza: false, nordnet: false };
+let skiMode = false;
 
 function daysAgo(n) {
   const d = new Date();
@@ -308,7 +325,44 @@ function renderChart(range) {
       scales,
     },
   });
+
+  updateSkiMarker(data, seriesConfig, activeKeys);
 }
+
+function updateSkiMarker(data, seriesConfig, activeKeys) {
+  const marker = document.getElementById("skiMarker");
+  if (!skiMode || !chart || data.length < 2) {
+    marker.style.display = "none";
+    return;
+  }
+
+  const primaryKey = visibleSeries.total ? "total" : activeKeys[0];
+  const s = seriesConfig[primaryKey];
+  const lastIdx = data.length - 1;
+  const lastVal = s.data[lastIdx];
+  const prevVal = s.data[lastIdx - 1];
+
+  const xScale = chart.scales.x;
+  const yScale = chart.scales[s.axis];
+  const px = xScale.getPixelForValue(lastIdx);
+  const py = yScale.getPixelForValue(lastVal);
+
+  let angle = 0;
+  if (lastVal > prevVal) angle = -28;      // uppåt i backen
+  else if (lastVal < prevVal) angle = 28;  // nerför
+  const flip = angle >= 0 ? "scaleX(-1)" : "scaleX(1)"; // åk åt "rätt" håll visuellt
+
+  marker.style.display = "block";
+  marker.style.left = (px - 13) + "px";
+  marker.style.top = (py - 15) + "px";
+  marker.style.transform = `rotate(${angle}deg) ${flip}`;
+}
+
+document.getElementById("skiToggle").addEventListener("click", () => {
+  skiMode = !skiMode;
+  document.getElementById("skiToggle").classList.toggle("on", skiMode);
+  renderChart(currentRange);
+});
 
 document.querySelectorAll("#seriesToggles input").forEach(cb => {
   cb.addEventListener("change", () => {
