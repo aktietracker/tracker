@@ -258,8 +258,8 @@ function renderChart(range) {
     data: {
       labels,
       datasets: [
-        { label: "Avanza", data: avanzaData, borderColor: "#ff3b30", backgroundColor: "rgba(255,59,48,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 2 },
-        { label: "Nordnet", data: nordnetData, borderColor: "#34c9eb", backgroundColor: "rgba(52,201,235,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 2 },
+        { label: "Avanza", data: avanzaData, borderColor: "#ff3b30", backgroundColor: "rgba(255,59,48,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 3, yAxisID: "yAvanza" },
+        { label: "Nordnet", data: nordnetData, borderColor: "#34c9eb", backgroundColor: "rgba(52,201,235,0.08)", tension: 0.25, fill: true, pointRadius: data.length > 60 ? 0 : 3, yAxisID: "yNordnet" },
       ],
     },
     options: {
@@ -268,7 +268,18 @@ function renderChart(range) {
       plugins: { legend: { labels: { color: "#e8eaed" } } },
       scales: {
         x: { ticks: { color: "#8b94a3", maxTicksLimit: 8 }, grid: { color: "#262b33" } },
-        y: { ticks: { color: "#8b94a3" }, grid: { color: "#262b33" } },
+        yAvanza: {
+          position: "left",
+          ticks: { color: "#ff3b30" },
+          grid: { color: "#262b33" },
+          title: { display: true, text: "Avanza", color: "#ff3b30" },
+        },
+        yNordnet: {
+          position: "right",
+          ticks: { color: "#34c9eb" },
+          grid: { display: false },
+          title: { display: true, text: "Nordnet", color: "#34c9eb" },
+        },
       },
     },
   });
