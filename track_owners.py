@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +41,26 @@ STOCKS = [
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
+
+
+def retry(fn, *, attempts=3, delay=10, backoff=2, label=""):
+    """Kör fn() upp till `attempts` gånger, med ökande fördröjning mellan
+    försöken (t.ex. 10s, 20s, 40s), innan det slutgiltiga felet kastas
+    vidare. Fångar tillfälliga nätverksstrul (timeouts, tillfälligt nere
+    sajter) utan att hela scriptet behöver ge upp direkt.
+    """
+    last_exc = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt < attempts:
+                wait = delay * (backoff ** (attempt - 1))
+                print(f"    Försök {attempt}/{attempts} för {label} misslyckades "
+                      f"({e}) – försöker igen om {wait}s...")
+                time.sleep(wait)
+    raise last_exc
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 # Valfritt: länk till din GitHub Pages-graf, t.ex.
@@ -174,7 +195,7 @@ def save_history(key: str, history: list) -> None:
 # Discord
 # ---------------------------------------------------------------------------
 
-def post_to_discord(results: list):
+def post_to_discord(results: list, failed_stocks: list = None):
     """results: lista av dicts med name, avanza, nordnet, avanza_diff, nordnet_diff"""
     if not DISCORD_WEBHOOK_URL:
         print("Ingen DISCORD_WEBHOOK_URL satt – hoppar över Discord-postning.")
@@ -188,6 +209,18 @@ def post_to_discord(results: list):
         return "(±0)"
 
     embeds = []
+
+    if failed_stocks:
+        embeds.append({
+            "title": "⚠️ Missade aktier idag",
+            "description": (
+                f"Kunde inte hämta data för: **{', '.join(failed_stocks)}** "
+                "(efter flera automatiska försök). Fångas förhoppningsvis upp "
+                "av nästa körning."
+            ),
+            "color": 0xF39C12,
+        })
+
     for r in results:
         total = r["avanza"] + r["nordnet"]
         total_diff = r["avanza_diff"] + r["nordnet_diff"]
@@ -204,12 +237,17 @@ def post_to_discord(results: list):
             embed["url"] = CHART_URL
         embeds.append(embed)
 
-    if embeds and CHART_URL:
-        embeds[0]["description"] = f"[Se Agartracker-grafen]({CHART_URL})"
+    if not embeds:
+        print("Inga resultat och inga fel att rapportera – hoppar över Discord-postning.")
+        return
 
-    embeds[0]["footer"] = {"text": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+    if CHART_URL:
+        embeds[-1]["description"] = embeds[-1].get("description", "") + \
+            f"\n\n[Se Agartracker-grafen]({CHART_URL})"
 
-    payload = {"content": "**Agartracker – daglig uppdatering**", "embeds": embeds}
+    embeds[-1]["footer"] = {"text": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
+
+    payload = {"content": "**Agartracker – daglig uppdatering**", "embeds": embeds[:10]}
     r = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=15)
     r.raise_for_status()
     print("Postat till Discord.")
@@ -242,6 +280,7 @@ def main():
         return
 
     results = []
+    failed_stocks = []
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     for stock in STOCKS:
@@ -249,13 +288,21 @@ def main():
         key = stock["key"]
         print(f"=== {name} ===")
 
-        print("  Hämtar antal ägare hos Avanza...")
-        avanza = get_avanza_owners(stock["avanza_id"])
-        print(f"    Avanza: {avanza}")
+        try:
+            print("  Hämtar antal ägare hos Avanza...")
+            avanza = retry(lambda: get_avanza_owners(stock["avanza_id"]),
+                           label=f"{name} (Avanza)")
+            print(f"    Avanza: {avanza}")
 
-        print("  Hämtar antal ägare hos Nordnet (via allaaktier.se)...")
-        nordnet = get_nordnet_owners(stock["allaaktier_slug"])
-        print(f"    Nordnet: {nordnet}")
+            print("  Hämtar antal ägare hos Nordnet (via allaaktier.se)...")
+            nordnet = retry(lambda: get_nordnet_owners(stock["allaaktier_slug"]),
+                            label=f"{name} (Nordnet)")
+            print(f"    Nordnet: {nordnet}")
+        except Exception as e:
+            print(f"  VARNING: Gav upp med {name} efter flera försök: {e}")
+            print(f"  Hoppar över {name} för idag, fortsätter med nästa aktie.")
+            failed_stocks.append(name)
+            continue
 
         history = load_history(key)
         prev = history[-1] if history else None
@@ -275,13 +322,17 @@ def main():
             "avanza_diff": avanza_diff, "nordnet_diff": nordnet_diff,
         })
 
+    if failed_stocks:
+        print(f"\nSammanfattning: {len(failed_stocks)} aktie(r) missades idag: "
+              f"{', '.join(failed_stocks)}")
+
     try:
         import build_excel
         build_excel.main()
     except Exception as e:
         print(f"Varning: kunde inte uppdatera Excel-filen: {e}")
 
-    post_to_discord(results)
+    post_to_discord(results, failed_stocks)
 
 
 if __name__ == "__main__":
