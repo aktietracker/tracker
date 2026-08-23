@@ -141,11 +141,10 @@ function isWeekend(dateStr) {
 }
 
 function filterByRange(data, range) {
-  let filtered = data.filter(d => !isWeekend(d.date));
-  if (range === "all") return filtered;
+  if (range === "all") return data;
   const cutoff = { "1w": 7, "1m": 30, "3m": 91, "6m": 182, "1y": 365, "3y": 1095 }[range];
   const cutoffDate = daysAgo(cutoff);
-  return filtered.filter(d => new Date(d.date) >= cutoffDate);
+  return data.filter(d => new Date(d.date) >= cutoffDate);
 }
 
 function renderStockTabs() {
@@ -344,8 +343,8 @@ function loadStock(key) {
   fetch(`./data/history_${key}.json?_=` + Date.now())
     .then(r => r.json())
     .then(data => {
-      fullData = data;
-      if (data.length === 0) {
+      fullData = data.filter(d => !isWeekend(d.date));
+      if (fullData.length === 0) {
         document.getElementById("chartHolder").style.display = "none";
         document.getElementById("emptyState").style.display = "block";
         document.getElementById("stats").innerHTML = "";
@@ -354,7 +353,7 @@ function loadStock(key) {
       }
       document.getElementById("chartHolder").style.display = "block";
       document.getElementById("emptyState").style.display = "none";
-      renderStats(data);
+      renderStats(fullData);
       renderChart(currentRange);
     })
     .catch(() => {
