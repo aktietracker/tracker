@@ -38,6 +38,7 @@ STOCKS = [
     {"key": "ossdsign", "name": "OssDsign", "avanza_id": "962596", "allaaktier_slug": "ossdsign"},
     {"key": "smarteye", "name": "Smart Eye", "avanza_id": "710675", "allaaktier_slug": "smart-eye"},
     {"key": "integrum", "name": "Integrum", "avanza_id": "753680", "allaaktier_slug": "integrum"},
+    {"key": "greenlandscaping", "name": "Green Landscaping", "avanza_id": "837354", "allaaktier_slug": "green-landscaping"},
 ]
 
 DATA_DIR = Path(__file__).parent / "data"
