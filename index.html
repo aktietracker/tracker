@@ -32,7 +32,7 @@
   .stock-tabs button {
     background: var(--card); border: 1px solid var(--border); color: var(--text);
     padding: 8px 18px; border-radius: 999px; font-size: 0.95rem; font-weight: 500;
-    cursor: pointer; transition: all 0.15s ease;
+    cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
   }
   .stock-tabs button:hover { border-color: var(--muted); }
   .stock-tabs button.active { background: var(--text); color: var(--bg); border-color: var(--text); }
@@ -121,7 +121,7 @@ const STOCKS = [
   { key: "ossdsign", name: "OssDsign" },
   { key: "smarteye", name: "Smart Eye" },
   { key: "integrum", name: "Integrum" },
-  { key: "greenlandscaping", name: "Green Landscaping" },
+  { key: "greenlandscaping", name: "Green Landscaping Group" },
 ];
 
 let currentStock = STOCKS[0].key;
