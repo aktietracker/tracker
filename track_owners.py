@@ -110,7 +110,13 @@ def get_avanza_owners(orderbook_id: str) -> int:
     for candidate_key in ("numberOfOwners", "numberOfShareholders", "ownerCount"):
         value = _find_key_recursive(data, candidate_key)
         if value is not None:
-            return int(value)
+            count = int(value)
+            if count <= 0:
+                raise RuntimeError(
+                    f"Avanza returnerade ett ogiltigt ägarantal ({count}) "
+                    f"för {orderbook_id} – behandlas som ett tillfälligt fel."
+                )
+            return count
 
     raise RuntimeError(
         "Hittade inget ägarantal i Avanza-svaret, oavsett nästling. "
@@ -166,6 +172,11 @@ def get_nordnet_owners(allaaktier_slug: str, debug: bool = False) -> int:
         raise RuntimeError(
             f"Kunde inte hitta/tolka 'Ägare Nordnet ... st' på {url}. "
             "Sidan kan ha ändrat struktur."
+        )
+    if count <= 0:
+        raise RuntimeError(
+            f"allaaktier.se visade ett ogiltigt Nordnet-antal ({count}) "
+            f"på {url} – behandlas som ett tillfälligt fel."
         )
     return count
 
