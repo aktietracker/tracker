@@ -103,6 +103,7 @@
       <label class="checked"><input type="checkbox" data-series="total" checked><span class="dot" style="background:#2ecc71"></span>Totalt</label>
       <label><input type="checkbox" data-series="avanza"><span class="dot" style="background:#ff3b30"></span>Avanza</label>
       <label><input type="checkbox" data-series="nordnet"><span class="dot" style="background:#34c9eb"></span>Nordnet</label>
+      <label id="priceToggle" style="display:none;"><input type="checkbox" data-series="price"><span class="dot" style="background:#f5a623"></span>Kurs</label>
     </div>
     <div id="chartHolder">
       <div class="period-summary" id="periodSummary"></div>
@@ -129,6 +130,8 @@ let fullData = [];
 let currentRange = "all";
 let chart = null;
 let visibleSeries = { total: true, avanza: false, nordnet: false };
+let priceData = [];
+let showPrice = false;
 
 function daysAgo(n) {
   const d = new Date();
@@ -256,11 +259,23 @@ function renderPeriodSummary(range, data) {
   const totalFirst = first.avanza + first.nordnet;
   const totalLast = last.avanza + last.nordnet;
 
+  let priceText = "";
+  const inRange = priceData.filter(p => p.date >= first.date && p.date <= last.date);
+  if (inRange.length >= 2) {
+    const p0 = inRange[0].close;
+    const p1 = inRange[inRange.length - 1].close;
+    const diff = p1 - p0;
+    const pct = p0 !== 0 ? (diff / p0 * 100) : 0;
+    const cls = diff > 0 ? "up" : diff < 0 ? "down" : "flat";
+    const sign = diff > 0 ? "+" : "";
+    priceText = ` &nbsp;·&nbsp; Kurs: <b class="${cls}">${sign}${diff.toFixed(2)} kr (${sign}${pct.toFixed(1)}%)</b>`;
+  }
+
   el.innerHTML = `
     <span class="range-label">${RANGE_LABELS[range]} (${fmtDateSv(first.date)} – ${fmtDateSv(last.date)})</span>
     ${part("Avanza", last.avanza, first.avanza)} &nbsp;·&nbsp;
     ${part("Nordnet", last.nordnet, first.nordnet)} &nbsp;·&nbsp;
-    ${part("Totalt", totalLast, totalFirst)}
+    ${part("Totalt", totalLast, totalFirst)}${priceText}
   `;
 }
 
@@ -273,10 +288,13 @@ function renderChart(range) {
   const nordnetData = data.map(d => d.nordnet);
   const totalData = data.map(d => d.avanza + d.nordnet);
 
+  const usePrice = showPrice && priceData.length > 0;
+  const ownerAxis = id => (usePrice ? "yOwners" : id);
+
   const seriesConfig = {
-    total: { label: "Totalt", data: totalData, color: "#2ecc71", axis: "yTotal" },
-    avanza: { label: "Avanza", data: avanzaData, color: "#ff3b30", axis: "yAvanza" },
-    nordnet: { label: "Nordnet", data: nordnetData, color: "#34c9eb", axis: "yNordnet" },
+    total: { label: "Totalt", data: totalData, color: "#2ecc71", axis: ownerAxis("yTotal") },
+    avanza: { label: "Avanza", data: avanzaData, color: "#ff3b30", axis: ownerAxis("yAvanza") },
+    nordnet: { label: "Nordnet", data: nordnetData, color: "#34c9eb", axis: ownerAxis("yNordnet") },
   };
 
   const activeKeys = Object.keys(seriesConfig).filter(k => visibleSeries[k]);
@@ -292,15 +310,42 @@ function renderChart(range) {
   const scales = {
     x: { ticks: { color: "#8b94a3", maxTicksLimit: 8 }, grid: { color: "#262b33" } },
   };
-  activeKeys.forEach((k, i) => {
-    const s = seriesConfig[k];
-    scales[s.axis] = {
-      position: i === 0 ? "left" : "right",
-      ticks: { color: s.color },
-      grid: { display: i === 0, color: "#262b33" },
-      title: { display: true, text: s.label, color: s.color },
+  if (usePrice) {
+    const single = activeKeys.length === 1 ? seriesConfig[activeKeys[0]] : null;
+    scales.yOwners = {
+      position: "left",
+      ticks: { color: single ? single.color : "#8b94a3" },
+      grid: { color: "#262b33" },
+      title: { display: true, text: single ? single.label : "Antal ägare", color: single ? single.color : "#8b94a3" },
     };
-  });
+  } else {
+    activeKeys.forEach((k, i) => {
+      const s = seriesConfig[k];
+      scales[s.axis] = {
+        position: i === 0 ? "left" : "right",
+        ticks: { color: s.color },
+        grid: { display: i === 0, color: "#262b33" },
+        title: { display: true, text: s.label, color: s.color },
+      };
+    });
+  }
+
+  if (usePrice) {
+    const priceMap = {};
+    priceData.forEach(p => { priceMap[p.date] = p.close; });
+    datasets.push({
+      label: "Kurs (kr)", data: labels.map(d => (d in priceMap ? priceMap[d] : null)),
+      borderColor: "#f5a623", backgroundColor: "#f5a62314", borderWidth: 2,
+      tension: 0.25, fill: false, spanGaps: true,
+      pointRadius: data.length > 60 ? 0 : 3, yAxisID: "yPrice",
+    });
+    scales.yPrice = {
+      position: "right",
+      ticks: { color: "#f5a623" },
+      grid: { display: false },
+      title: { display: true, text: "Kurs (kr)", color: "#f5a623" },
+    };
+  }
 
   if (chart) chart.destroy();
   const ctx = document.getElementById("ownerChart").getContext("2d");
@@ -318,6 +363,12 @@ function renderChart(range) {
 
 document.querySelectorAll("#seriesToggles input").forEach(cb => {
   cb.addEventListener("change", () => {
+    if (cb.dataset.series === "price") {
+      showPrice = cb.checked;
+      cb.closest("label").classList.toggle("checked", cb.checked);
+      renderChart(currentRange);
+      return;
+    }
     const wouldBeAllOff = !cb.checked && Object.values(visibleSeries).filter(v => v).length <= 1 && visibleSeries[cb.dataset.series];
     if (wouldBeAllOff) {
       cb.checked = true; // minst en serie måste alltid vara vald
@@ -341,9 +392,20 @@ function loadStock(key) {
   const stock = STOCKS.find(s => s.key === key);
   document.getElementById("pageTitle").textContent = `Agartracker – ${stock.name}`;
 
-  fetch(`./data/history_${key}.json?_=` + Date.now())
-    .then(r => r.json())
-    .then(data => {
+  const bust = "?_=" + Date.now();
+  Promise.all([
+    fetch(`./data/history_${key}.json${bust}`).then(r => r.json()),
+    fetch(`./data/price_${key}.json${bust}`).then(r => (r.ok ? r.json() : [])).catch(() => []),
+  ])
+    .then(([data, prices]) => {
+      priceData = Array.isArray(prices) ? prices : [];
+      const toggle = document.getElementById("priceToggle");
+      toggle.style.display = priceData.length ? "" : "none";
+      if (!priceData.length) {
+        showPrice = false;
+        toggle.querySelector("input").checked = false;
+        toggle.classList.remove("checked");
+      }
       fullData = data.filter(d => !isWeekend(d.date));
       if (fullData.length === 0) {
         document.getElementById("chartHolder").style.display = "none";

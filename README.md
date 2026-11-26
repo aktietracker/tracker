@@ -147,3 +147,17 @@ Grafen (`index.html`) visar:
 - Rekordbricka: högsta antal någonsin per mäklare + datum
 - Streak: antal dagar i rad med ökning i totalt antal
 - Ratio: Avanza-ägare per Nordnet-ägare
+
+## Kurs
+
+Dagliga stängningskurser hämtas från Avanzas diagramdata (samma instrument-ID
+som ägarantalet) och sparas i `data/price_<key>.json`, från insamlingens start
+(4 augusti 2026) och framåt. Varje körning hämtar ett års dagsdata och slår
+ihop det med filen, så missade dagar fylls i automatiskt vid nästa körning.
+
+I dashboarden visas kursen via kryssrutan "Kurs" (egen skala till höger, ägarna
+på en gemensam skala till vänster). Kursen hämtas separat från ägarantalet, så
+ett fel på ena stoppar inte det andra.
+
+Avanzas diagram-endpoint är inofficiell och kan ändras, precis som övrig
+Avanza-data. Yahoo Finance gav samma slutkurser vid test och kan vara reserv.

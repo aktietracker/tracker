@@ -26,6 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import aiohttp
 import requests
@@ -204,6 +205,71 @@ def save_history(key: str, history: list) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Kurs (daglig stängningskurs från Avanzas diagramdata)
+# ---------------------------------------------------------------------------
+
+# Kursen fylls på bakåt till den dag insamlingen startade och hålls sedan
+# uppdaterad. Varje körning hämtar ett års dagsdata och slår ihop det med
+# filen, så missade dagar fylls i automatiskt vid nästa körning.
+PRICE_START = "2026-08-04"
+STOCKHOLM = ZoneInfo("Europe/Stockholm")
+
+
+def price_file(key: str) -> Path:
+    return DATA_DIR / f"price_{key}.json"
+
+
+def load_prices(key: str) -> list:
+    f = price_file(key)
+    if f.exists():
+        return json.loads(f.read_text(encoding="utf-8"))
+    return []
+
+
+def save_prices(key: str, prices: list) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    price_file(key).write_text(
+        json.dumps(prices, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def fetch_avanza_prices(orderbook_id: str) -> list:
+    """Dagliga stängningskurser (datum, kurs) från Avanzas diagram-endpoint.
+
+    Datum räknas om till svensk tid, så att varje tidsstämpel hamnar på rätt
+    handelsdag oavsett om den ligger vid midnatt lokal tid eller UTC.
+    """
+    url = (
+        f"https://www.avanza.se/_api/price-chart/stock/{orderbook_id}"
+        "?timePeriod=one_year&resolution=day"
+    )
+    resp = requests.get(
+        url, headers={**HEADERS, "Accept": "application/json"}, timeout=25
+    )
+    resp.raise_for_status()
+    points = []
+    for o in resp.json().get("ohlc") or []:
+        ts, close = o.get("timestamp"), o.get("close")
+        if ts is None or close is None or float(close) <= 0:
+            continue
+        day = datetime.fromtimestamp(ts / 1000, tz=STOCKHOLM).strftime("%Y-%m-%d")
+        points.append((day, round(float(close), 4)))
+    if not points:
+        raise RuntimeError(f"Inga kurspunkter i Avanzas diagramsvar för {orderbook_id}.")
+    return points
+
+
+def update_prices(key: str, orderbook_id: str) -> int:
+    points = retry(lambda: fetch_avanza_prices(orderbook_id), label=f"{key} (kurs)")
+    merged = {p["date"]: p["close"] for p in load_prices(key)}
+    for day, close in points:
+        if day >= PRICE_START:
+            merged[day] = close
+    save_prices(key, [{"date": d, "close": merged[d]} for d in sorted(merged)])
+    return len(merged)
+
+
+# ---------------------------------------------------------------------------
 # Discord
 # ---------------------------------------------------------------------------
 
@@ -299,6 +365,12 @@ def main():
         name = stock["name"]
         key = stock["key"]
         print(f"=== {name} ===")
+
+        try:
+            n_prices = update_prices(key, stock["avanza_id"])
+            print(f"  Kurs uppdaterad ({n_prices} dagar totalt)")
+        except Exception as e:
+            print(f"  VARNING: kunde inte uppdatera kursen för {name}: {e}")
 
         try:
             print("  Hämtar antal ägare hos Avanza...")
